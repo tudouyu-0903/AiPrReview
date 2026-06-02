@@ -11,6 +11,7 @@ import org.kohsuke.github.GHPullRequest;
 import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GitHub;
 import org.kohsuke.github.GitHubBuilder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.util.Map;
@@ -61,16 +62,18 @@ public class GitHubWebhookServiceImple implements GitHubWebhookService {
      * 调用 GitHub API 把评论写回去
      * @param reviewReport
      */
+    @Value("${github.token}")
+    private String githubToken;
     @Override
     public void submitCodeReview(String repoFullName,int prNumber,String latestCommitSha,ReviewReport reviewReport) {
         // 2. 🔥 闭环核心：调用 GitHub API 把评论写回去
         // 注意：正式生产推荐用 GitHub App，测试阶段可以用你个人的 PAT Token
-        String myGitHubToken = "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"; // 换成你自己的 GitHub Token
+        // 换成你自己的 GitHub Token
         GHPullRequest pr = null;
         try {
             //创建 GitHub 客户端连接
             GitHub github = new GitHubBuilder()
-                    .withOAuthToken(myGitHubToken)
+                    .withOAuthToken(githubToken)
                     .build();
             // 获取仓库对象
             GHRepository repo = github.getRepository(repoFullName);
