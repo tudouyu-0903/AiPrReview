@@ -106,7 +106,7 @@ public class GitHubWebhookServiceImple implements GitHubWebhookService {
                     reportMarkdown.append("💡 **建议修改为：**\n```java\n")
                             .append(item.getCodeSnippet()).append("\n```\n\n");
                 }
-                reportMarkdown.append("---\n");
+                reportMarkdown.append("--\n");
             }
         // 2. 🔥 换用这个接口，直接评论到 PR 的主留言板（绝对不会报 422 错误）
             pr.comment(reportMarkdown.toString());
