@@ -53,7 +53,7 @@ public class GitHubSignatureAspect {
 
         // 5. 严格比对：如果不一致，直接抛异常，彻底阻断 Controller 的执行
         if (!computedSignature.equals(gitHubSignature)) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "【AOP拦截】安全校验失败，拒绝访问！");
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "[AOP拦截]安全校验失败，拒绝访问！");
         }
     }
 
