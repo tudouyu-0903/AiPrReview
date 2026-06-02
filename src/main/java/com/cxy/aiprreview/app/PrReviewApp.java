@@ -4,8 +4,6 @@ import com.cxy.aiprreview.dto.ReviewReport;
 import com.cxy.aiprreview.excption.BusinessException;
 import com.cxy.aiprreview.excption.ErrorCode;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
@@ -14,8 +12,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY;
-import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_RETRIEVE_SIZE_KEY;
 
 @Component
 public class PrReviewApp {

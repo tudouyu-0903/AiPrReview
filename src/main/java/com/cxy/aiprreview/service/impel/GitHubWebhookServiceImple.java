@@ -92,33 +92,24 @@ public class GitHubWebhookServiceImple implements GitHubWebhookService {
             throw new BusinessException(ErrorCode.OPERATION_ERROR,"没有AI给出的代码审查建议");
         }
         try {
-            for (com.cxy.aiprreview.dto.ReviewCommentItem item : reviewReport.getComments()) {
-
-                // 跳过定位失败或未知的行
-                if (item.getLineNumber() <= 0 || "unknown".equals(item.getFilePath())) {
-                    continue;
-                }
-
-                // 组装要在 GitHub 显示的漂亮 Markdown 格式
-                StringBuilder bodyBuilder = new StringBuilder();
-                bodyBuilder.append("### 🤖 AI 智能审查意见\n");
-                bodyBuilder.append(item.getSuggestion()).append("\n\n");
+            // 1. 组装整篇大报告
+            StringBuilder reportMarkdown = new StringBuilder();
+            reportMarkdown.append("# 🤖 AI 智能代码审查报告\n\n");
+            reportMarkdown.append("期待与您一起提升代码质量！以下是本次审查发现的优化点：\n\n");
+            for (int i = 0; i < reviewReport.getComments().size(); i++) {
+                var item = reviewReport.getComments().get(i);
+                reportMarkdown.append(String.format("### 📌 建议 %d: `%s` (第 %d 行)\n",
+                        i + 1, item.getFilePath(), item.getLineNumber()));
+                reportMarkdown.append("> **审查意见：** ").append(item.getSuggestion()).append("\n\n");
 
                 if (item.getCodeSnippet() != null && !item.getCodeSnippet().isBlank()) {
-                    bodyBuilder.append("💡 **优化建议：**\n")
-                            .append("```suggestion\n") // 采用 GitHub 专属魔法卡片语法
-                            .append(item.getCodeSnippet()).append("\n")
-                            .append("```");
+                    reportMarkdown.append("💡 **建议修改为：**\n```java\n")
+                            .append(item.getCodeSnippet()).append("\n```\n\n");
                 }
-
-                // 发送给 GitHub，展示在对应文件的对应行
-                pr.createReviewComment(
-                        bodyBuilder.toString(),
-                        latestCommitSha,
-                        item.getFilePath(),
-                        item.getLineNumber()
-                );
+                reportMarkdown.append("---\n");
             }
+        // 2. 🔥 换用这个接口，直接评论到 PR 的主留言板（绝对不会报 422 错误）
+            pr.comment(reportMarkdown.toString());
         } catch (Exception e) {
             log.info("提交代码审查结果失败: " + e.getMessage());
             throw new BusinessException(ErrorCode.OPERATION_ERROR,e.getMessage());
