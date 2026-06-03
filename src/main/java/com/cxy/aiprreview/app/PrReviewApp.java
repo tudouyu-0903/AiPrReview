@@ -58,7 +58,6 @@ public class PrReviewApp {
         Prompt prompt = promptTemplate.create(Map.of("diff", codeDiff));
 
         ChatResponse chatResponse = chatClient.prompt(prompt)
-                .system(prReviewPrompt)
                 .call()
                 .chatResponse();
         if (chatResponse == null || chatResponse.getResult() == null) {
@@ -83,7 +82,6 @@ public class PrReviewApp {
         ));
 
         ChatResponse chatResponse = chatClient.prompt(prompt)
-                .system(prReviewPrompt)
                 .call()
                 .chatResponse();
         if (chatResponse == null || chatResponse.getResult() == null) {

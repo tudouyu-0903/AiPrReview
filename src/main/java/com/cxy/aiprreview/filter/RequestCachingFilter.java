@@ -19,6 +19,7 @@ public class RequestCachingFilter implements Filter {
             ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper((HttpServletRequest) request);
             chain.doFilter(wrappedRequest, response);
         } else {
+            // 对于非HTTP请求，直接传递原始请求
             chain.doFilter(request, response);
         }
     }
