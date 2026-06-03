@@ -44,11 +44,7 @@ public class GitHubWebhookController {
             return ResponseEntity.ok(ResultUtils.success("Ignore PR action: " + action));
         }
         //将修改后的代码提交给AI进行审核
-        ReviewReport reviewReport = gitHubWebhookService.handleGitHubWebhook(eventType, payload);
-        if(reviewReport == null){
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).
-                    body(new BaseResponse<>(ErrorCode.OPERATION_ERROR));
-        }
+        gitHubWebhookService.handleGitHubWebhook(eventType, payload);
         return ResponseEntity.ok(ResultUtils.success("Webhook processed"));
 
     }

@@ -12,6 +12,7 @@ import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GitHub;
 import org.kohsuke.github.GitHubBuilder;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.util.Map;
@@ -21,37 +22,38 @@ public class GitHubWebhookServiceImple implements GitHubWebhookService {
     private final RestTemplate restTemplate = new RestTemplate();
     @Resource
     private PrReviewApp prReviewApp;
+
+    @Async("aiReviewExecutor")
     @Override
-    public ReviewReport handleGitHubWebhook(String eventType, Map<String, Object> payload) {
+    public void handleGitHubWebhook(String eventType, Map<String, Object> payload) {
         try {
-            // 3. 获取项目信息 (哪个项目)
+            // 1. 获取项目信息 (哪个项目)
             Map<String, Object> repository = (Map<String, Object>) payload.get("repository");
             String repoFullName = (String) repository.get("full_name"); // 例如: "owner/repo-name"
 
-            // 4. 获取 Pull Request 的核心数据
+            // 2. 获取 Pull Request 的核心数据
             Map<String, Object> pullRequest = (Map<String, Object>) payload.get("pull_request");
             int prNumber = (int) pullRequest.get("number"); // PR 编号
             String diffUrl = (String) pullRequest.get("diff_url"); // 包含具体改动了哪行代码的文本链接
             Map<String, Object> head = (Map<String, Object>) pullRequest.get("head");
             String latestCommitSha = (String) head.get("sha");
 
-            System.out.printf("【收到通知】项目 [%s] 触发了第 %d 号 PR\n", repoFullName, prNumber);
-            System.out.println("正在通过 diff_url 获取代码具体改动行...");
+            log.info("【异步任务】项目 [{}] 触发了第 {} 号 PR，正在下载 Diff...", repoFullName, prNumber);
 
-            // 5. 请求 diff_url 拿到纯文本格式的 Diff 数据
+            // 3. 请求 diff_url 拿到纯文本格式的 Diff 数据
             // 如果是私有仓库，需要在此处配置 GitHub Token 鉴权，公开仓库可直接请求
             String codeDiff = restTemplate.getForObject(diffUrl, String.class);
-
-            // 6. 打印出具体的改动行数据
-            System.out.println("====== 接收到的代码 Diff ======");
-            System.out.println(codeDiff);
-            System.out.println("=============================");
-
-            // 此处直接将 codeDiff 丢给你的 Spring AI 服务进行审查
+            // 4.AI 服务进行审查
             ReviewReport aiReview = prReviewApp.getAiReview(codeDiff);
-            // 7. 提交代码审查结果在github评论区
+
+            // 防御性判空
+            if (aiReview == null || aiReview.getComments() == null || aiReview.getComments().isEmpty()) {
+                log.info("【异步任务结束】大模型未检测到致命 Bug 或性能风险，无需在 GitHub 留白报告。");
+                return;
+            }
+            // 5. 提交代码审查结果在github评论区
             submitCodeReview(repoFullName,prNumber,latestCommitSha,aiReview);
-            return aiReview;
+            log.info("【后台异步线程成功结束】项目 [{}] 的第 {} 号 PR 审查大报告已发布！", repoFullName, prNumber);
         } catch (Exception e) {
             log.info("处理 GitHub Webhook 失败: " + e.getMessage());
             throw new BusinessException(ErrorCode.OPERATION_ERROR,e.getMessage());
@@ -66,33 +68,29 @@ public class GitHubWebhookServiceImple implements GitHubWebhookService {
     private String githubToken;
     @Override
     public void submitCodeReview(String repoFullName,int prNumber,String latestCommitSha,ReviewReport reviewReport) {
-        // 2. 🔥 闭环核心：调用 GitHub API 把评论写回去
-        // 注意：正式生产推荐用 GitHub App，测试阶段可以用你个人的 PAT Token
-        // 换成你自己的 GitHub Token
         GHPullRequest pr = null;
         try {
-            //创建 GitHub 客户端连接
+            //1.创建 GitHub 客户端连接
             GitHub github = new GitHubBuilder()
                     .withOAuthToken(githubToken)
                     .build();
-            // 获取仓库对象
+            //2.获取仓库对象
             GHRepository repo = github.getRepository(repoFullName);
-            // 获取指定的 Pull Request
+            //3.获取指定的 Pull Request
             pr = repo.getPullRequest(prNumber);
         } catch (Exception e) {
             log.info("获取 GitHub 仓库失败: " + e.getMessage());
             throw new BusinessException(ErrorCode.OPERATION_ERROR,e.getMessage());
         }
 
-        // 获取 PR 的最新 commit SHA
-        // 🔥 关键：获取当前 PR 关联的最顶层 Commit (用于精确定位行号)
+        // 获取 PR 的最新 commit SHA 获取当前 PR 关联的最顶层 Commit (用于精确定位行号)
 
-        // 3. 循环遍历 AI 给出的 comments 数组
+        // 4.. 循环遍历 AI 给出的 comments 数组
         if (reviewReport == null || reviewReport.getComments() == null) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR,"没有AI给出的代码审查建议");
         }
         try {
-            // 1. 组装整篇大报告
+            // 6. 组装整篇大报告
             StringBuilder reportMarkdown = new StringBuilder();
             reportMarkdown.append("# 🤖 AI 智能代码审查报告\n\n");
             reportMarkdown.append("期待与您一起提升代码质量！以下是本次审查发现的优化点：\n\n");
@@ -108,7 +106,7 @@ public class GitHubWebhookServiceImple implements GitHubWebhookService {
                 }
                 reportMarkdown.append("--\n");
             }
-        // 2. 🔥 换用这个接口，直接评论到 PR 的主留言板（绝对不会报 422 错误）
+        // 7.直接评论到 PR 的主留言板（绝对不会报 422 错误）
             pr.comment(reportMarkdown.toString());
         } catch (Exception e) {
             log.info("提交代码审查结果失败: " + e.getMessage());
