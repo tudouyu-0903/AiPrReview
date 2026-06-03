@@ -1,5 +1,6 @@
 package com.cxy.aiprreview.controller;
 
+import com.cxy.aiprreview.anno.Idempotent;
 import com.cxy.aiprreview.anno.VerifyGitHubSignature;
 import com.cxy.aiprreview.app.PrReviewApp;
 import com.cxy.aiprreview.common.BaseResponse;
@@ -30,6 +31,7 @@ public class GitHubWebhookController {
      */
     @PostMapping("/webhook")
     @VerifyGitHubSignature
+    @Idempotent
     public ResponseEntity<BaseResponse<String>> handleGitHubWebhook(
             @RequestHeader(value = "X-GitHub-Event", required = false) String eventType,
             @RequestBody Map<String, Object> payload) {

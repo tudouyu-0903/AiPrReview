@@ -9,7 +9,9 @@ spring:
       chat:
         options:
           model: qwen3-coder-next
-
+  data:
+    redis:
+      database: 2
 server:
   port: 8080
   servlet:
