@@ -88,7 +88,7 @@ public class GitHubWebhookServiceImple implements GitHubWebhookService {
         // 🔥 关键：获取当前 PR 关联的最顶层 Commit (用于精确定位行号)
 
         // 3. 循环遍历 AI 给出的 comments 数组
-        if (reviewReport == null && reviewReport.getComments() == null) {
+        if (reviewReport == null || reviewReport.getComments() == null) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR,"没有AI给出的代码审查建议");
         }
         try {
