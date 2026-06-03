@@ -14,7 +14,7 @@ public interface GitHubWebhookService {
      * @param payload
      * @return
      */
-    ReviewReport handleGitHubWebhook(String eventType, Map<String, Object> payload);
+    void handleGitHubWebhook(String eventType, Map<String, Object> payload);
 
     /***
      * 提交代码审查结果在github评论区
