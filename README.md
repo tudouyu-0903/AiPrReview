@@ -1,148 +1,141 @@
 # AI-PR-Review
 
-AI-PR-Review 是一个基于 Spring Boot 的 GitHub Pull Request 智能代码审查服务。项目通过 GitHub Webhook 接收 PR 事件，自动获取本次 PR 的代码 Diff，调用通义千问代码模型生成审查建议，并将审查报告评论回对应的 GitHub Pull Request。
+AI-PR-Review 是一个面向 GitHub Pull Request 的 AI 智能代码审查服务。它通过 GitHub Webhook 接收 PR 事件，校验请求来源，过滤重复投递，异步拉取 PR Diff，调用通义千问代码模型生成结构化审查建议，并把审查报告自动评论回对应的 PR。
+
+## 目录
+
+- [功能展示](#功能展示)
+- [核心能力](#核心能力)
+- [技术栈](#技术栈)
+- [执行流程](#执行流程)
+- [项目结构](#项目结构)
+- [核心模块说明](#核心模块说明)
+- [环境准备](#环境准备)
+- [配置说明](#配置说明)
+- [本地启动](#本地启动)
+- [GitHub Webhook 配置](#github-webhook-配置)
+- [测试与验证](#测试与验证)
+- [注意事项](#注意事项)
+- [后续优化方向](#后续优化方向)
 
 ## 功能展示
 
 ![功能展示](image/功能展示.png)
 
-## 优化说明与测试结果
+## 核心能力
 
-本项目近期围绕 Webhook 安全性、请求幂等性、响应速度和 AI 审查质量进行了四项重点优化：
-
-### 1. GitHub Webhook 签名校验
-
-新增 `@VerifyGitHubSignature` 注解和 AOP 校验逻辑，通过 `X-Hub-Signature-256` 请求头与 `github.webhook-secret` 计算出的 HmacSHA256 签名进行比对。签名缺失或不匹配时会直接拦截请求，避免非 GitHub 来源伪造 Webhook 调用。
-
-签名校验已使用 Apifox 模拟请求进行测试，验证了非法签名无法进入业务处理流程。
-
-![签名校验测试结果](image/签名校验测试结果.png)
-
-### 2. 并发重复请求优化
-
-新增 `@Idempotent` 注解和 Redis 幂等拦截逻辑，根据 `X-GitHub-Delivery`、仓库名、PR 编号和最新 commit SHA 组合生成幂等 Key。相同 Webhook 投递在有效期内只允许处理一次，避免 GitHub 重复投递或并发请求导致 AI 重复审查、PR 重复评论。
-
-![重复请求测试结果](image/重复请求测试结果.png)
-
-### 3. 异步优化 AI 回复
-
-Webhook 接口收到合法请求后会快速返回成功，AI 审查、Diff 拉取和 GitHub 评论写回交给后台线程池 `aiReviewExecutor` 异步执行。这样可以降低 GitHub Webhook 超时风险，也让接口响应更加稳定。
-
-![异步优化测试结果](image/异步优化测试结果.png)
-
-### 4. 提示词优化
-
-将 AI 审查提示词从 Java 代码中抽离到 `src/main/resources/prompts/pr-review-json-prompt.txt`，并强化了审查约束：
-
-- 只审查本次 Diff 中新增或修改的代码
-- 优先输出真实 bug、安全风险、可靠性问题和可维护性问题
-- 减少泛泛的风格建议和重复建议
-- 要求模型只返回合法 JSON，便于转换为 `ReviewReport`
-- 没有明确问题时返回空 `comments` 数组，避免无意义 PR 评论
-
-## 项目特性
-
-- 自动监听 GitHub Pull Request 的 `opened` 和 `synchronize` 事件
-- 基于 `X-Hub-Signature-256` 校验 GitHub Webhook 请求签名
-- 基于 Redis 幂等 Key 过滤重复 Webhook 投递和并发重复请求
-- 使用后台线程池异步执行 AI 审查，Webhook 接口可快速响应
-- 根据 PR 的 `diff_url` 获取代码变更内容
-- 使用 Spring AI Alibaba 接入 DashScope 大模型
-- 支持外置提示词文件，便于独立维护 AI 审查策略
-- 将 AI 输出转换为结构化审查报告
-- 通过 GitHub API 将审查结果写回 PR 评论区
-- 集成 Knife4j，便于查看和调试接口文档
+- 监听 GitHub Pull Request 的 `opened` 和 `synchronize` 事件。
+- 使用 `X-Hub-Signature-256` 校验 Webhook 请求签名，拦截伪造请求。
+- 使用 Redis 幂等锁过滤重复 Webhook 投递，避免重复触发 AI 审查和 PR 评论。
+- 使用 Spring 异步线程池执行耗时任务，让 Webhook 接口快速响应 GitHub。
+- 根据 PR 的 `diff_url` 获取代码变更内容。
+- 使用 Spring AI Alibaba 接入 DashScope / 通义千问代码模型。
+- 将 AI 返回内容转换为结构化 `ReviewReport`。
+- 将审查结果组装成 Markdown，并通过 GitHub API 评论到 PR 主评论区。
+- 将 AI 审查提示词外置到资源文件，便于独立维护审查策略。
+- 集成 Knife4j / OpenAPI，便于调试接口。
 
 ## 技术栈
 
-| 模块 | 技术 / 依赖 | 说明 |
+| 分类 | 技术 / 依赖 | 说明 |
 | --- | --- | --- |
-| 后端框架 | Spring Boot 3.2.12 | 提供 Web 服务、配置管理和依赖注入 |
-| AI 能力 | Spring AI Alibaba 1.0.0-M6.1 | 接入 DashScope / 通义千问模型 |
-| 默认模型 | `qwen3-coder-next` | 用于分析 PR Diff 并生成代码审查建议 |
-| GitHub 集成 | `github-api` 1.318 | 获取仓库和 PR 信息，提交审查评论 |
-| 安全校验 | Spring AOP + HmacSHA256 | 校验 GitHub Webhook 签名，拦截非法请求 |
-| 幂等控制 | Spring Data Redis | 过滤重复投递，避免重复触发 AI 审查 |
-| 异步处理 | Spring `@Async` + `ThreadPoolTaskExecutor` | 后台执行耗时 AI 审查任务 |
-| 接口文档 | Knife4j 4.4.0 | 提供 OpenAPI 文档页面 |
+| 语言 | Java 21 | 项目编译和运行版本 |
+| 后端框架 | Spring Boot 3.2.12 | Web 服务、配置管理、依赖注入 |
+| AI 接入 | Spring AI Alibaba 1.0.0-M6.1 | 接入 DashScope 大模型 |
+| 默认模型 | `qwen3-coder-next` | 分析 PR Diff 并生成审查建议 |
+| GitHub 集成 | `github-api` 1.318 | 获取仓库 / PR 信息，提交 PR 评论 |
+| 安全校验 | Spring AOP + HmacSHA256 | 校验 GitHub Webhook 签名 |
+| 幂等控制 | Spring Data Redis | 防止重复投递和并发重复处理 |
+| 异步处理 | `@Async` + `ThreadPoolTaskExecutor` | 后台执行 AI 审查任务 |
+| 接口文档 | Knife4j 4.4.0 | 提供接口文档页面 |
 | 工具库 | Hutool 5.8.37 | 常用 Java 工具能力 |
-| 构建工具 | Maven | 项目依赖管理和打包 |
-| JDK | Java 21 | 项目编译和运行环境 |
+| 构建工具 | Maven | 依赖管理、编译、测试、打包 |
 
 ## 执行流程
 
-```mermaid
-graph TD;
-    A["开发者创建或更新 Pull Request"] --> B["GitHub 触发 Webhook"];
-    B --> C["POST /api/github/webhook"];
-    C --> D["校验 X-Hub-Signature-256 签名"];
-    D --> E["Redis 幂等检测"];
-    E --> F{"是否为 pull_request 事件"};
-    F -- "否" --> G["忽略事件并返回成功"];
-    F -- "是" --> H{"action 是否为 opened 或 synchronize"};
-    H -- "否" --> I["忽略当前 PR 动作"];
-    H -- "是" --> J["Webhook 快速返回成功"];
-    J --> K["后台线程池异步处理"];
-    K --> L["解析仓库名称、PR 编号、diff_url、commit SHA"];
-    L --> M["请求 diff_url 获取代码 Diff"];
-    M --> N["读取外置提示词并调用 PrReviewApp.getAiReview"];
-    N --> O["Spring AI 调用 qwen3-coder-next"];
-    O --> P["BeanOutputConverter 转换为 ReviewReport"];
-    P --> Q{"是否存在有效审查建议"};
-    Q -- "否" --> R["结束任务，不发布空报告"];
-    Q -- "是" --> S["GitHub API 定位仓库和 PR"];
-    S --> T["组装 Markdown 审查报告"];
-    T --> U["评论到 GitHub PR"];
+> 如果当前 Markdown 预览器不支持 Mermaid，也可以直接查看下面的静态流程图。
+
+![执行流程](image/执行流程.svg)
+
+## 项目结构
+
+```text
+AI-PR-Review/
+├── image/                                      # README 展示图片和测试截图
+├── src/
+│   ├── main/
+│   │   ├── java/com/cxy/aiprreview/
+│   │   │   ├── anno/                          # 自定义注解
+│   │   │   ├── aop/                           # Webhook 签名校验、幂等拦截
+│   │   │   ├── app/                           # AI 审查应用服务
+│   │   │   ├── common/                        # 通用响应封装
+│   │   │   ├── config/                        # 异步线程池配置
+│   │   │   ├── controller/                    # Webhook 接口
+│   │   │   ├── dto/                           # 审查报告数据结构
+│   │   │   ├── excption/                      # 业务异常和错误码
+│   │   │   ├── filter/                        # 请求体缓存过滤器
+│   │   │   ├── service/                       # Webhook 业务服务
+│   │   │   └── AiPrReviewApplication.java     # Spring Boot 启动类
+│   │   └── resources/
+│   │       ├── prompts/pr-review-json-prompt.txt
+│   │       ├── application.yml
+│   │       └── application-local.yml
+│   └── test/
+├── pom.xml
+└── README.md
 ```
 
-## 核心代码路径
+## 核心模块说明
 
 | 文件 | 作用 |
 | --- | --- |
-| `src/main/java/com/cxy/aiprreview/controller/GitHubWebhookController.java` | Webhook 入口，过滤 GitHub 事件和 PR 动作 |
-| `src/main/java/com/cxy/aiprreview/service/impel/GitHubWebhookServiceImple.java` | 处理 Webhook、获取 Diff、提交 PR 评论 |
-| `src/main/java/com/cxy/aiprreview/app/PrReviewApp.java` | 读取提示词文件，调用大模型并解析结果 |
-| `src/main/resources/prompts/pr-review-json-prompt.txt` | AI 代码审查提示词 |
-| `src/main/java/com/cxy/aiprreview/aop/GitHubSignatureAspect.java` | GitHub Webhook 签名校验 |
-| `src/main/java/com/cxy/aiprreview/aop/IdempotentAspect.java` | Webhook 幂等控制，防止重复处理 |
-| `src/main/java/com/cxy/aiprreview/config/AsyncConfig.java` | AI 审查异步线程池配置 |
-| `src/main/java/com/cxy/aiprreview/filter/RequestCachingFilter.java` | 缓存请求体，支持签名校验重复读取 body |
-| `src/main/java/com/cxy/aiprreview/dto/ReviewReport.java` | AI 审查报告结构 |
-| `src/main/java/com/cxy/aiprreview/dto/ReviewCommentItem.java` | 单条审查建议结构 |
-| `src/main/resources/application.yml` | 服务端口、AI 模型、GitHub Token 等配置 |
+| `GitHubWebhookController.java` | Webhook 入口，过滤事件类型和 PR 动作 |
+| `VerifyGitHubSignature.java` | 标记需要进行 GitHub 签名校验的方法 |
+| `GitHubSignatureAspect.java` | 基于请求体和 `github.webhook-secret` 计算 HmacSHA256 签名并比对 |
+| `RequestCachingFilter.java` | 将请求包装为可重复读取的请求体，支持 AOP 中读取原始 body |
+| `Idempotent.java` | 标记需要进行幂等控制的方法，默认锁 5 分钟 |
+| `IdempotentAspect.java` | 基于 `X-GitHub-Delivery`、仓库、PR 编号和 commit SHA 生成 Redis 幂等 Key |
+| `AsyncConfig.java` | 配置 `aiReviewExecutor`，核心线程 4、最大线程 8、队列容量 50 |
+| `GitHubWebhookServiceImple.java` | 异步拉取 Diff、调用 AI、写回 GitHub PR 评论 |
+| `PrReviewApp.java` | 加载提示词、调用大模型、将 JSON 转换为 `ReviewReport` |
+| `pr-review-json-prompt.txt` | AI 代码审查提示词，约束模型只返回合法 JSON |
+| `ReviewReport.java` | AI 审查报告对象，包含多条评论 |
+| `ReviewCommentItem.java` | 单条审查建议，包含文件路径、行号、建议和修复代码片段 |
 
 ## 环境准备
 
-1. 安装 JDK 21
-2. 安装 Maven
-3. 准备 DashScope API Key
-4. 准备 GitHub Token
-5. 准备 Redis 服务，用于 Webhook 幂等控制
-6. 准备 GitHub Webhook Secret，用于签名校验
+本地运行前需要准备：
+
+1. JDK 21
+2. Maven 3.8+
+3. Redis 服务
+4. DashScope API Key
+5. GitHub Token
+6. GitHub Webhook Secret
+7. 一个可被 GitHub 访问的公网地址，本地调试可使用内网穿透工具
 
 GitHub Token 需要具备访问目标仓库和评论 Pull Request 的权限。测试阶段可以使用个人 PAT，生产环境更推荐使用 GitHub App。
 
 ## 配置说明
 
-项目通过环境变量读取敏感配置：
+项目主配置位于 `src/main/resources/application.yml`。当前启用了 `local` profile，因此本地会额外读取 `src/main/resources/application-local.yml`。
 
-```bash
-AI_DASHSCOPE_API_KEY=你的 DashScope API Key
-GITHUB_TOKEN=你的 GitHub Token
-GITHUB_WEBHOOK_SECRET=你的 GitHub Webhook Secret
-REDIS_HOST=你的 Redis 地址
-REDIS_PORT=6379
-REDIS_PASSWORD=你的 Redis 密码
-```
+敏感信息建议通过环境变量或本地私有配置注入，不要提交真实密钥、Token、Redis 密码到仓库。
 
-核心配置位于 `src/main/resources/application.yml`：
+推荐环境变量：
+
+| 变量 | 是否必需 | 说明 |
+| --- | --- | --- |
+| `AI_DASHSCOPE_API_KEY` | 是 | DashScope API Key，用于调用通义千问模型 |
+| `GITHUB_TOKEN` | 是 | GitHub API Token，用于访问仓库和评论 PR |
+| `GITHUB_WEBHOOK_SECRET` | 是 | GitHub Webhook Secret，用于签名校验 |
+| `REDIS_HOST` | 是 | Redis 地址 |
+| `REDIS_PORT` | 否 | Redis 端口，默认通常为 `6379` |
+| `REDIS_PASSWORD` | 视环境而定 | Redis 密码 |
+
+示例配置：
 
 ```yaml
-server:
-  port: 8080
-  servlet:
-    context-path: /api
-
 spring:
   ai:
     dashscope:
@@ -154,27 +147,43 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD}
+      password: ${REDIS_PASSWORD:}
       database: 2
 
 github:
-  token: ${GITHUB_TOKEN:default_value_if_needed}
+  token: ${GITHUB_TOKEN}
   webhook-secret: ${GITHUB_WEBHOOK_SECRET}
 ```
 
-## 启动项目
+> 当前 `application.yml` 只显式配置了 Redis 的 `database: 2`，如果不使用 `application-local.yml`，请补充 Redis 连接地址、GitHub Token 和 Webhook Secret。
+
+## 本地启动
+
+安装依赖并运行测试：
+
+```bash
+mvn test
+```
+
+启动服务：
 
 ```bash
 mvn spring-boot:run
 ```
 
-服务启动后，Webhook 接口地址为：
+服务默认地址：
+
+```text
+http://localhost:8080/api
+```
+
+Webhook 接口：
 
 ```text
 POST http://localhost:8080/api/github/webhook
 ```
 
-Knife4j 接口文档地址：
+Knife4j 文档地址：
 
 ```text
 http://localhost:8080/api/doc.html
@@ -188,7 +197,7 @@ http://localhost:8080/api/v3/api-docs
 
 ## GitHub Webhook 配置
 
-在 GitHub 仓库中进入：
+进入 GitHub 仓库：
 
 ```text
 Settings -> Webhooks -> Add webhook
@@ -196,7 +205,7 @@ Settings -> Webhooks -> Add webhook
 
 推荐配置：
 
-| 配置项 | 值 |
+| 配置项 | 推荐值 |
 | --- | --- |
 | Payload URL | `http://你的公网地址/api/github/webhook` |
 | Content type | `application/json` |
@@ -204,21 +213,54 @@ Settings -> Webhooks -> Add webhook
 | Events | 选择 `Pull requests` |
 | Active | 勾选 |
 
-本地调试时，GitHub 无法直接访问 `localhost`，可以使用内网穿透工具将本地 `8080` 端口暴露为公网地址。
+GitHub 触发请求时会携带：
 
-如果使用 Apifox 测试签名校验，需要根据请求体和 Webhook Secret 计算 `sha256=` 开头的 HmacSHA256 签名，并放入 `X-Hub-Signature-256` 请求头。
+| Header | 说明 |
+| --- | --- |
+| `X-GitHub-Event` | 事件类型，本项目只处理 `pull_request` |
+| `X-GitHub-Delivery` | 本次投递的唯一 ID，用于幂等 Key |
+| `X-Hub-Signature-256` | 基于请求体和 Secret 生成的 `sha256=` 签名 |
+
+## 测试与验证
+
+### 签名校验
+
+签名校验会使用请求原始 body 和 `github.webhook-secret` 计算 HmacSHA256。缺少签名或签名不匹配时，请求会被拒绝。
+
+![签名校验测试结果](image/签名校验测试结果.png)
+
+### 重复请求过滤
+
+幂等逻辑会组合 `X-GitHub-Delivery`、仓库名、PR 编号和 commit SHA 生成 Redis Key。默认 5 分钟内相同请求只会处理一次。
+
+![重复请求测试结果](image/重复请求测试结果.png)
+
+### 异步审查
+
+合法 Webhook 会先快速返回成功，AI 审查、Diff 拉取和 GitHub 评论写回由后台线程池继续执行。
+
+![异步优化测试结果](image/异步优化测试结果.png)
 
 ## 注意事项
 
-- `AI_DASHSCOPE_API_KEY` 和 `GITHUB_TOKEN` 不要提交到代码仓库。
-- `GITHUB_WEBHOOK_SECRET`、Redis 密码等敏感配置同样不要提交到代码仓库。
-- Webhook 当前主要处理 `pull_request` 事件中的 `opened` 和 `synchronize` 动作。
-- Webhook 请求必须携带合法的 `X-Hub-Signature-256` 签名，否则会被拦截。
-- 重复投递会被 Redis 幂等逻辑拦截，默认锁有效期为 5 分钟。
-- AI 审查已改为异步执行，接口返回成功只代表请求已进入处理流程，不代表 AI 评论已经立即发布完成。
-- 私有仓库的 `diff_url` 可能需要鉴权访问，需要确保 GitHub Token 权限充足。
+- 不要把 DashScope API Key、GitHub Token、Webhook Secret、Redis 密码提交到代码仓库。
+- 当前代码依赖 `github.webhook-secret`，缺少该配置会导致服务启动或签名校验失败。
+- 当前代码使用 Redis 做幂等控制，Redis 不可用会影响 Webhook 正常处理。
+- Webhook 当前只处理 `pull_request` 事件中的 `opened` 和 `synchronize` 动作。
+- Webhook 返回成功只代表请求已进入处理流程，不代表 AI 审查已经完成。
+- 私有仓库的 `diff_url` 可能需要鉴权访问，当前拉取 Diff 使用 `RestTemplate` 直接请求，需要根据私有仓库场景补充鉴权。
 - AI 输出依赖模型响应质量，如果返回内容不是合法 JSON，`BeanOutputConverter` 可能解析失败。
-- 当前实现将审查结果评论到 PR 主评论区，不是逐行 Review Comment。
-- PR Diff 过大时可能触发模型上下文长度限制，建议后续增加 Diff 截断、分文件审查或分批审查能力。
-- 建议生产环境使用 GitHub App 替代个人 Token，便于权限隔离和审计。
+- 当前实现将审查结果发布到 PR 主评论区，不是逐行 Review Comment。
+- PR Diff 过大时可能触发模型上下文长度限制，建议后续按文件拆分或分批审查。
+- 当前 `RestTemplate` 未显式配置连接和读取超时，生产环境建议补充超时、重试和降级策略。
 
+## 后续优化方向
+
+- 支持逐行 Review Comment，直接定位到具体文件行。
+- 支持私有仓库 Diff 拉取鉴权。
+- 支持按文件拆分 Diff 并分批调用 AI。
+- 增加 AI 返回 JSON 的容错修复和重试策略。
+- 增加审查结果持久化，便于追踪历史 PR 质量。
+- 增加 GitHub App 接入，替代个人 PAT。
+- 增加 Dockerfile / docker-compose，简化部署和本地联调。
+- 增加更多单元测试和端到端 Webhook 测试。

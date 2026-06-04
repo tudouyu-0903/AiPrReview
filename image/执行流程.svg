@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1020" viewBox="0 0 1180 1020">
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #334155; stroke-width: 1.4; rx: 8; }
+      .decision { fill: #fff7ed; stroke: #c2410c; stroke-width: 1.4; }
+      .async { fill: #eef2ff; stroke: #4338ca; stroke-width: 1.4; rx: 8; }
+      .end { fill: #f0fdf4; stroke: #15803d; stroke-width: 1.4; rx: 8; }
+      .text { fill: #0f172a; font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 18px; }
+      .small { fill: #475569; font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 15px; }
+      .arrow { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+      .label { fill: #334155; font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 15px; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1180" height="1020" />
+  <text x="590" y="44" text-anchor="middle" class="text" style="font-size: 26px; font-weight: 700;">AI-PR-Review 执行流程</text>
+  <text x="590" y="72" text-anchor="middle" class="small">GitHub Webhook 接收、校验、幂等、异步 AI 审查与 PR 评论写回</text>
+
+  <rect x="360" y="105" width="460" height="56" class="box" />
+  <text x="590" y="140" text-anchor="middle" class="text">开发者创建或更新 Pull Request</text>
+
+  <rect x="360" y="190" width="460" height="56" class="box" />
+  <text x="590" y="225" text-anchor="middle" class="text">GitHub 触发 Webhook</text>
+
+  <rect x="360" y="275" width="460" height="56" class="box" />
+  <text x="590" y="310" text-anchor="middle" class="text">POST /api/github/webhook</text>
+
+  <rect x="360" y="360" width="460" height="56" class="box" />
+  <text x="590" y="395" text-anchor="middle" class="text">校验 X-Hub-Signature-256 签名</text>
+
+  <rect x="360" y="445" width="460" height="56" class="box" />
+  <text x="590" y="480" text-anchor="middle" class="text">Redis 幂等检测</text>
+
+  <polygon points="590,530 820,590 590,650 360,590" class="decision" />
+  <text x="590" y="586" text-anchor="middle" class="text">是否为 pull_request</text>
+  <text x="590" y="610" text-anchor="middle" class="small">只处理 PR 事件</text>
+
+  <rect x="70" y="562" width="230" height="56" class="end" />
+  <text x="185" y="597" text-anchor="middle" class="text">忽略并返回成功</text>
+
+  <polygon points="590,690 820,750 590,810 360,750" class="decision" />
+  <text x="590" y="746" text-anchor="middle" class="text">action 是否有效</text>
+  <text x="590" y="770" text-anchor="middle" class="small">opened / synchronize</text>
+
+  <rect x="70" y="722" width="230" height="56" class="end" />
+  <text x="185" y="757" text-anchor="middle" class="text">忽略当前动作</text>
+
+  <rect x="360" y="850" width="460" height="56" class="async" />
+  <text x="590" y="884" text-anchor="middle" class="text">Webhook 快速返回成功</text>
+
+  <rect x="360" y="935" width="460" height="56" class="async" />
+  <text x="590" y="969" text-anchor="middle" class="text">后台线程池异步处理</text>
+
+  <rect x="870" y="445" width="250" height="56" class="box" />
+  <text x="995" y="480" text-anchor="middle" class="text">解析 PR 信息</text>
+
+  <rect x="870" y="530" width="250" height="56" class="box" />
+  <text x="995" y="565" text-anchor="middle" class="text">拉取代码 Diff</text>
+
+  <rect x="870" y="615" width="250" height="56" class="box" />
+  <text x="995" y="650" text-anchor="middle" class="text">调用 AI 审查</text>
+
+  <rect x="870" y="700" width="250" height="56" class="box" />
+  <text x="995" y="735" text-anchor="middle" class="text">转换 ReviewReport</text>
+
+  <polygon points="995,790 1120,840 995,890 870,840" class="decision" />
+  <text x="995" y="836" text-anchor="middle" class="text">有建议?</text>
+  <text x="995" y="858" text-anchor="middle" class="small">comments 非空</text>
+
+  <rect x="870" y="925" width="250" height="56" class="end" />
+  <text x="995" y="959" text-anchor="middle" class="text">评论到 GitHub PR</text>
+
+  <rect x="930" y="305" width="190" height="56" class="end" />
+  <text x="1025" y="340" text-anchor="middle" class="text">结束，不发空报告</text>
+
+  <path d="M590 161 L590 190" class="arrow" />
+  <path d="M590 246 L590 275" class="arrow" />
+  <path d="M590 331 L590 360" class="arrow" />
+  <path d="M590 416 L590 445" class="arrow" />
+  <path d="M590 501 L590 530" class="arrow" />
+  <path d="M360 590 L300 590" class="arrow" />
+  <text x="325" y="578" text-anchor="middle" class="label">否</text>
+  <path d="M590 650 L590 690" class="arrow" />
+  <text x="615" y="674" class="label">是</text>
+  <path d="M360 750 L300 750" class="arrow" />
+  <text x="325" y="738" text-anchor="middle" class="label">否</text>
+  <path d="M590 810 L590 850" class="arrow" />
+  <text x="615" y="834" class="label">是</text>
+  <path d="M590 906 L590 935" class="arrow" />
+
+  <path d="M820 963 C850 963 850 473 870 473" class="arrow" />
+  <path d="M995 501 L995 530" class="arrow" />
+  <path d="M995 586 L995 615" class="arrow" />
+  <path d="M995 671 L995 700" class="arrow" />
+  <path d="M995 756 L995 790" class="arrow" />
+  <path d="M995 890 L995 925" class="arrow" />
+  <text x="1018" y="912" class="label">是</text>
+  <path d="M1065 808 C1128 735 1130 394 1085 361" class="arrow" />
+  <text x="1118" y="596" class="label">否</text>
+</svg>
